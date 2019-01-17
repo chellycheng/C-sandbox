@@ -1,0 +1,49 @@
+#!/bin/bash
+
+#read files
+
+string="$(cat $2)"
+$res
+$diff
+$position
+
+#for i in `echo "$string" | fold -w1`
+do
+	echo $i
+# check if it is a-z or A-Z or something else
+# according to the a-z or A-Z or something else select the right line
+	
+	if [[ $i == [a-z] ]]
+	then
+		position=$(printf '%d\n' "'$i")
+        	position=$(($position-96))
+		previous=$(($position-1))
+		code=$(head -n 1 $1)
+		keycode="${code:$previous:$position}"
+	elif [[ $i == [A-Z] ]]
+	then
+		position=$(printf '%d\n' "'$i")
+        	echo "This is first $position"
+		position=$(($position-64))
+		previous=$(($position-1))
+		code=$(sed -n '2p' $1)
+		keycode="${code:$previous:$position}"
+	
+	else
+		res+="$i"
+		echo "I am going to break"
+		break
+	fi
+
+	keycode_number=$(printf '%d\n' "'$keycode")
+	string_number=$(printf '%d\n' "'$i")
+	diff=$(($keycode_number-$string_number))
+#replacing every character according to code
+
+	n=$(printf '%d\n' "'$i")
+	n=$(($n+diff))
+	char=$(printf \\$(printf '%03o' $n))
+	res+="$char"
+done
+
+echo $res 
