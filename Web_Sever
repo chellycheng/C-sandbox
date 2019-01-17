@@ -1,0 +1,944 @@
+
+
+#include <stdio.h>
+#include <string.h>	
+#include <sys/socket.h>
+#include <arpa/inet.h>	
+#include <unistd.h>	
+#include <stdlib.h>
+#include <time.h>
+
+int check_winning(char ttt[3][3]){
+	//check row
+	for(int row =0; row<3;row++){
+			if(ttt[row][0]==ttt[row][1]&&ttt[row][1]==ttt[row][2]&&ttt[row][0]!=' '){
+				if(ttt[row][0]=='o')
+					return -2;
+				else
+					return 2;
+			}
+	}
+	//check col
+
+	for(int col =0; col<3;col++){
+			if(ttt[0][col]==ttt[1][col]&&ttt[1][col]==ttt[2][col]&&ttt[0][col]!=' '){
+				if(ttt[0][col]=='o')
+					return -2;
+				else
+					return 2;
+			}
+	}
+	//check diagool
+	//2 diagnol to check
+	int col = 0;
+	int row = 0;
+			
+	if(ttt[row][col]==ttt[row+1][col+1]&&ttt[row+1][col+1]==ttt[row+2][col+2]&&ttt[row+2][col+2]!=' '){
+		if(ttt[row][col]=='o')
+			return -2;
+		else
+			return 2;
+	}
+
+	if(ttt[2-row][col]==ttt[1-row][col+1]&&ttt[1-row][col+1]==ttt[row][col+2]&&ttt[row][col+2]!=' '){
+		if(ttt[row][col]=='o')
+			return -2;
+		else
+			return 2;
+	}
+
+	return 0;
+}
+
+
+
+struct USER{
+	char username[100];
+	char password[100];
+	struct USER *next;
+};
+
+enum GAME_STATE{ 
+	CREATOR_WON=-2,
+	IN_PROGRESS_CREATOR_NEXT=-1,
+	DRAW=0,
+	IN_PROGRESS_CHALLENGER_NEXT=1,
+	CHALLENGER_WON=2
+};
+
+struct GAME{
+	char gamename[100];
+	struct USER *creator;
+	struct USER *challenger;
+	enum GAME_STATE state;
+	char ttt[3][3];
+	struct GAME *next;
+};
+
+//initializa the user and the host
+struct USER *user_list_head = NULL;
+struct GAME *game_list_head = NULL;
+
+void find_user(struct USER** user,char* username,char* password){
+
+		//check when no objects
+		if(user_list_head==NULL){
+			return;
+		}
+		//check when first one
+		else if(strcmp(user_list_head->username,username)==0&&(strcmp(user_list_head->password,password)==0)){
+			//find the user
+			// aaa  *user = (struct USER*)malloc(sizeof(struct USER));
+			*user = user_list_head;
+			return;
+		}
+		//first one if password is not right
+		else if(strcmp(user_list_head->username,username)==0){
+			//find name but password not correst
+			return;
+		}
+
+		else{
+
+			struct USER * user_check = user_list_head;
+			while(user_check->next!=NULL){
+					if((strcmp(user_check->username,username)==0)&&(strcmp(user_check->password,password)==0)){
+						//find the name
+						//aaa*user = (struct USER*)malloc(sizeof(struct USER));
+						*user = user_check;
+						return;
+					}
+					else{
+						user_check = user_check->next;
+					}
+				}
+
+				if((strcmp(user_check->username,username)==0)&&(strcmp(user_check->password,password)==0)){
+						//find the name
+						*user = user_check;
+						return;
+					}
+		}
+		return;
+	}
+
+
+void find_game(struct GAME** game,char* gamename){
+
+
+		if(game_list_head==NULL){
+			return;
+		}
+
+		else{
+			struct GAME * game_check = game_list_head;
+			if(game_check->next==NULL){
+				if(strcmp(game_list_head->gamename,gamename)==0){
+					//find the user
+					//aaa*game = (struct GAME*)malloc(sizeof(struct GAME));
+					*game = game_list_head;
+					return;
+				}
+			}
+
+			else{
+			
+			
+				while(game_check->next!=NULL){
+						if(strcmp(game_check->gamename,gamename)==0){
+							//find the name
+							//aaa*game = (struct GAME*)malloc(sizeof(struct GAME));
+							*game = game_check;
+							return;
+						}
+						else{
+							game_check = game_check->next;
+						}
+				}
+
+				if(strcmp(game_check->gamename,gamename)==0){
+							//find the name
+							//aaa*game = (struct GAME*)malloc(sizeof(struct GAME));
+							*game = game_check;
+							return;
+						}
+			}
+		}
+		return;
+	}
+
+int main(int argc , char *argv[])
+{
+	int socket_desc , client_sock , c , read_size;
+	struct sockaddr_in server , client;
+	char client_message[2000];
+
+	unsigned short int port = 8888;
+
+	if( argc > 1 )
+		port = (unsigned short int)atoi(argv[1]);
+	
+	//Create socket
+	socket_desc = socket(AF_INET , SOCK_STREAM , 0);
+	if (socket_desc == -1)
+	{
+		printf("Could not create socket");
+	}
+	
+	//Prepare the sockaddr_in structure
+	server.sin_family = AF_INET;
+	server.sin_addr.s_addr = INADDR_ANY;
+	server.sin_port = htons( port );
+	
+	if( bind(socket_desc,(struct sockaddr *)&server , sizeof(server)) < 0)
+	{
+		perror("bind failed. Error");
+		return 1;
+	}
+
+	listen(socket_desc , 3);
+
+	printf( "Game server ready on port %d.\n", port );
+
+	while( 1 ){
+		c = sizeof(struct sockaddr_in);
+
+		//accept connection from an incoming client
+		client_sock = accept(socket_desc, (struct sockaddr *)&client, (socklen_t*)&c);
+		if (client_sock < 0)
+		{
+			perror("accept failed");
+			return 1;
+		}
+
+		char temp[200];
+		//set all temp to be  \0
+		memset(client_message, '\0', 200);
+		int bytes_read = 0;
+		while( bytes_read < 200 ){
+			//temp is our buffer
+			//the data we read from our guest stored in the temp
+			read_size = recv(client_sock , temp , 200, 0);
+			if(read_size <= 0){
+				puts("Client disconnected");
+				fflush(stdout);
+				close(client_sock);
+				close(socket_desc);
+				return 0;
+			}
+
+			memcpy( client_message+bytes_read, temp, read_size );
+			bytes_read += read_size;
+		}
+
+	
+	  	char response[2000];
+	  	response[0] = '\0';
+	  
+	  	char* command = strtok( client_message, "," );
+	  	printf("Here is the command: %s\n",command);
+	  	char *username = strtok( NULL, "," );
+	  	char *password = strtok( NULL, ",");
+
+
+		if( command == NULL || username == NULL || password == NULL ){
+			sprintf( response, "MUST ENTER A VALID COMMAND WITH ARGUMENTS FROM THE LIST:\n" );
+			sprintf( response+strlen(response), "LOGIN,USER,PASS\n" );
+			sprintf( response+strlen(response), "CREATE,USER,PASS,GAMENAME\n" );
+			sprintf( response+strlen(response), "JOIN,USER,PASS,GAMENAME,SQUARE\n" );
+			sprintf( response+strlen(response), "MOVE,USER,PASS,GAMENAME,SQUARE\n" );
+			sprintf( response+strlen(response), "LIST,USER,PASS\n" );
+			sprintf( response+strlen(response), "SHOW,USER,PASS,GAMENAME\n" );
+			write(client_sock , response , 2000);  
+		  	close(client_sock);
+			continue;
+		}
+
+		if( strcmp( command, "LOGIN" ) == 0 ){
+			//creating the new user
+			
+
+			if(user_list_head==NULL){
+				user_list_head = (struct USER*) malloc(sizeof(struct USER));
+				strcpy(user_list_head->password,password);
+				strcpy(user_list_head->username,username);
+				user_list_head->next=NULL;
+
+				strcpy( response, "LOGIN: Create a new player");
+			}
+				else{
+					struct USER * freeSpot =  user_list_head;
+					int unfind =1;
+					//go thorough the list 
+					if(freeSpot->next==NULL){
+					
+						if((strcmp(freeSpot->username,username)==0)&&(strcmp(freeSpot->password,password)==0))
+						{
+							//find the correct user name and password
+							unfind = 0;
+							strcpy(response,"LOGIN: You have logined in. ");
+							write(client_sock , response , 2000);  
+		  					close(client_sock);
+							continue;
+						}
+
+						else if((strcmp(freeSpot->username,username)==0)){
+							//TODO: what should i use to print error
+							// do i need break?
+							//find you
+							strcpy(response,"LOGIN: The password you have entered is nor correct. " );
+							unfind = 0;
+							write(client_sock , response , 2000);  
+		  					close(client_sock);
+							continue;
+						}
+						else{
+							struct USER * newplayer = (struct USER*) malloc(sizeof(struct USER));
+							strcpy(newplayer->password,password);
+							strcpy(newplayer->username,username);
+							newplayer->next=NULL;
+							freeSpot->next=newplayer;
+							strcpy( response, "LOGIN: Create a new player. You are the second one! ");
+						}
+					}
+
+					while(freeSpot->next!=NULL){
+						if((strcmp(freeSpot->username,username)==0)&&(strcmp(freeSpot->password,password)==0))
+						{
+							//find the correct user name and password
+							unfind = 0;
+							strcpy(response,"LOGIN: You have logined in. ");
+							break;
+						}
+						else if((strcmp(freeSpot->username,username)==0)){
+							strcpy(response,"LOGIN: Password is not correct.");
+							unfind = 0;
+							break;
+						}
+						
+						//continue to the next
+						else{
+							freeSpot = freeSpot->next;
+						}
+					}
+
+					if((strcmp(freeSpot->username,username)==0)&&(strcmp(freeSpot->password,password)==0))
+						{
+							//find the correct user name and password
+							unfind = 0;
+							strcpy(response,"LOGIN: You have logined in. ");
+						}
+
+					else{
+							struct USER * newplayer = (struct USER*) malloc(sizeof(struct USER));
+							strcpy(newplayer->password,password);
+							strcpy(newplayer->username,username);
+							newplayer->next=NULL;
+							freeSpot->next=newplayer;
+							strcpy( response, "LOGIN: Create a new player" );
+							unfind = 0;
+						}
+
+					if(unfind!=0){
+						//creating a new user at the end of list
+					struct USER * newplayer = (struct USER*) malloc(sizeof(struct USER));
+					strcpy(newplayer->password,password);
+					strcpy(newplayer->username,username);
+					newplayer->next=NULL;
+
+					freeSpot->next = newplayer;
+					strcpy( response, "LOGIN: Create a new player" );
+				}
+			}
+	  	}
+
+	  	else if( strcmp( command, "CREATE" ) == 0 ){ 
+	  		char *game_name = strtok( NULL, ",");
+
+			if( game_name == NULL ){
+				sprintf( response, "CREATE COMMAND MUST BE CALLED AS FOLLOWS:\n" );
+				sprintf( response+strlen(response), "CREATE,USER,PASS,GAMENAME\n" );
+				write(client_sock , response , 2000);  
+		  		close(client_sock);
+		  		continue;
+			}
+
+			struct GAME *game = (struct GAME*)malloc( sizeof(struct GAME) );
+			strcpy( game->gamename, game_name );
+
+			struct USER * user_check = NULL;
+
+			find_user(&user_check,username,password);
+
+			if(user_check==NULL){
+
+				strcpy( response,"JOIN: Error happens, no such user. ");
+				write(client_sock , response , 2000);  
+		  		close(client_sock);
+				continue;		  		
+			}
+
+			game->creator = user_check;
+			game->challenger = NULL;
+			game->next = NULL; 
+			game->state=1;
+
+			for( int row=0; row<3; row++ ){
+				for( int col=0; col<3; col++ ){
+					game->ttt[row][col] = ' ';
+				}
+			}
+			 
+
+			if(game_list_head==NULL){
+
+
+				game_list_head = game;
+				strcpy(response,"CREATE: First game created. \r\n");
+				sprintf( response, "%sa  %c | %c | %c \r\n",response,  game->ttt[0][0],  game->ttt[0][1],  game->ttt[0][2]);
+				sprintf( response, "%s  ---|---|---\r\n", response );
+				sprintf( response, "%sb  %c | %c | %c \r\n", response, game->ttt[1][0],  game->ttt[1][1],  game->ttt[1][2]);
+				sprintf( response, "%s  ---|---|---\r\n", response );
+				sprintf( response, "%sc  %c | %c | %c \r\n", response, game->ttt[2][0],  game->ttt[2][1],  game->ttt[2][2]);
+				sprintf( response, "%s\r\n", response );
+				sprintf( response, "%s   %c   %c   %c\r\n", response, '1', '2', '3' );
+		
+			}
+
+			else{
+				struct GAME * freeSpot =  game_list_head;
+				int unfind = 1;
+				if(freeSpot->next==NULL){
+					
+						if(strcmp(freeSpot->gamename,game_name)==0)
+						{
+							//find the correct user name and password
+							unfind = 0;
+							strcpy(response,"CREATE: Somebody use that gamename, pick another one. ");
+							write(client_sock , response , 2000);  
+		  					close(client_sock);
+							continue;
+						}
+					}
+
+					while(freeSpot->next!=NULL){
+						if(strcmp(freeSpot->gamename,game_name)==0)
+						{
+							//find the correct user name and password
+							unfind = 0;
+							strcpy(response,"CREATE: Use another game name. ");
+							break;
+						}
+						
+						
+						//continue to the next
+						else{
+							freeSpot = freeSpot->next;
+						}
+					}
+
+					if(strcmp(freeSpot->gamename,game_name)==0)
+						{
+							//find the correct user name and password
+							unfind = 0;
+							strcpy(response,"CREATE: Use another game name. ");
+							write(client_sock , response , 2000);  
+		  					close(client_sock);
+							continue;
+						}
+
+					if(unfind!=0){
+						//creating a new user at the end of list
+				
+							//freeSpot->next=(struct GAME*)malloc(sizeof(struct GAME));
+							freeSpot->next= game;
+
+						strcpy( response, "CREATE: Create a new game\r\n" );
+						sprintf( response, "%sa  %c | %c | %c \r\n",response,  game->ttt[0][0],  game->ttt[0][1],  game->ttt[0][2]);
+						sprintf( response, "%s  ---|---|---\r\n", response );
+						sprintf( response, "%sb  %c | %c | %c \r\n", response, game->ttt[1][0],  game->ttt[1][1],  game->ttt[1][2]);
+						sprintf( response, "%s  ---|---|---\r\n", response );
+						sprintf( response, "%sc  %c | %c | %c \r\n", response, game->ttt[2][0],  game->ttt[2][1],  game->ttt[2][2]);
+						sprintf( response, "%s\r\n", response );
+						sprintf( response, "%s   %c   %c   %c\r\n", response, '1', '2', '3' );
+				}
+			}
+
+
+		}
+
+
+
+		else if( strcmp( command, "JOIN" ) == 0 ){ 
+		
+			//take the input
+
+			char *game_name = strtok( NULL, ",");
+			char *first_move = strtok( NULL, ",");
+
+			if( game_name == NULL ){
+				strcpy( response, "JOIN COMMAND MUST BE CALLED AS FOLLOWS:\n" );
+				strcat( response, "JOIN,USER,PASS,GAMENAME,SQUARE\n" );
+				write(client_sock , response , 2000);  
+		  		close(client_sock);
+		  		continue;
+			}
+
+			if( first_move == NULL ){
+				strcpy( response, "JOIN COMMAND MUST BE CALLED AS FOLLOWS:\n" );
+				strcat( response, "JOIN,USER,PASS,GAMENAME,SQUARE\n");
+				write(client_sock , response , 2000);  
+		  		close(client_sock);
+		  		continue;
+			}
+
+			int col =0;
+			int row =0;
+			//check if the input is valid
+			if((*first_move!='a')&&(*first_move!='b')&&(*first_move!='c')){
+				strcpy(response,"JOIN : ERROR: Move input invlaid");
+				write(client_sock , response , 2000);  
+		  		close(client_sock);
+				continue;
+			}
+			else{
+				if(*first_move =='a')
+					row =0 ;
+				if(*first_move =='b')
+					row = 1;
+				if(*first_move =='c')
+					row = 2;
+
+			}
+
+
+			if((*(first_move+1)!='1')&&(*(first_move+1)!='2')&&(*(first_move+1)!='3')){
+				strcpy( response,"JOIN ERROR:Move input invlaid");
+				write(client_sock , response , 2000);  
+		  		close(client_sock);
+				continue;
+			}
+			else{
+				if(*(first_move+1)=='1')
+					col =0 ;
+				if(*(first_move+1)=='2')
+					col = 1;
+				if(*(first_move+1)=='3')
+					col = 2;
+			}
+
+
+			//find the struct user
+
+			struct USER * user_check = NULL;
+
+			find_user(&user_check,username,password);
+
+
+			if(user_check==NULL){
+
+				strcpy( response,"JOIN : ERROR: No such user exist or password error");
+				write(client_sock , response , 2000);  
+		  		close(client_sock);
+		  		continue;
+			}
+
+			//find the struct game
+			struct GAME * game_check = NULL;
+
+			find_game(&game_check,game_name);
+
+			if(game_check ==NULL){
+				strcpy( response,"JOIN:ERROR: No such game");
+				write(client_sock , response , 2000);  
+		 		close(client_sock);
+		  		continue;
+			}
+
+			
+			if(game_check->challenger!=NULL){
+						strcpy( response,"JOIN ERROR :This game has no empty space!");
+						write(client_sock , response , 2000);  
+		  				close(client_sock);
+		  				continue;
+			}
+
+			else{
+
+				//game_check->challenger = (struct USER*)malloc(sizeof(struct USER));
+				game_check->challenger = user_check;
+				game_check->ttt[row][col] = 'x';
+				game_check->state=-1;
+				strcpy( response,"JOIN: You have join the game\r\n");
+
+				sprintf( response, "%s,Challenger move first\r\n",response);
+				sprintf( response, "%sa  %c | %c | %c \r\n",response,  game_check->ttt[0][0],  game_check->ttt[0][1],  game_check->ttt[0][2]);
+				sprintf( response, "%s  ---|---|---\r\n", response );
+				sprintf( response, "%sb  %c | %c | %c \r\n", response, game_check->ttt[1][0],  game_check->ttt[1][1],  game_check->ttt[1][2]);
+				sprintf( response, "%s  ---|---|---\r\n", response );
+				sprintf( response, "%sc  %c | %c | %c \r\n", response, game_check->ttt[2][0],  game_check->ttt[2][1],  game_check->ttt[2][2]);
+				sprintf( response, "%s\r\n", response );
+				sprintf( response, "%s   %c   %c   %c\r\n", response, '1', '2', '3' );
+			}
+
+		}
+
+
+		else if( strcmp( command, "MOVE" ) == 0 ){ 
+			char *game_name = strtok( NULL, ",");
+			char *first_move = strtok( NULL, ",");
+
+				if( game_name == NULL ){
+				strcpy( response, "MOVE COMMAND MUST BE CALLED AS FOLLOWS:\n" );
+				strcat( response, "MOVE,USER,PASS,GAMENAME,SQUARE\n");
+				write(client_sock , response , 2000);  
+		  		close(client_sock);
+		  		continue;
+			}
+
+			if( first_move == NULL ){
+				strcpy( response, "MOVE COMMAND MUST BE CALLED AS FOLLOWS:\n" );
+				strcat( response, "MOVE,USER,PASS,GAMENAME,SQUARE\n");
+				write(client_sock , response , 2000);  
+		  		close(client_sock);
+		  		continue;
+			}
+
+			int col =0;
+			int row =0;
+			//check if the input is valid
+			if((*first_move!='a')&&(*first_move!='b')&&(*first_move!='c')){
+				//pass
+				strcpy( response,"MOVE:ERROR:MOVE INPUT INVALID");
+				write(client_sock , response , 2000);  
+		  		close(client_sock);
+				continue;
+			}
+			else{
+				if(*first_move =='a')
+					row =0 ;
+				if(*first_move =='b')
+					row = 1;
+				if(*first_move =='c')
+					row = 2;
+
+			}
+
+
+			if((*(first_move+1)!='1')&&(*(first_move+1)!='2')&&(*(first_move+1)!='3')){
+				//pass
+				strcpy( response,"MOVE:ERROR:MOVE INPUT INVALID");
+				write(client_sock , response , 2000);  
+		  		close(client_sock);
+				continue;
+			}
+			else{
+				if(*(first_move+1)=='1')
+					col =0 ;
+				if(*(first_move+1)=='2')
+					col = 1;
+				if(*(first_move+1)=='3')
+					col = 2;
+			}
+
+			struct USER * user_check = NULL;
+
+			find_user(&user_check,username,password);
+
+			if(user_check==NULL){
+				//
+				strcpy( response,"MOVE:ERROR:No such user or password wrong.");
+				write(client_sock , response , 2000);  
+		  		close(client_sock);
+		  		continue;
+			}
+
+			//find the struct game
+			struct GAME * game_check = NULL;
+
+			find_game( &game_check,game_name);
+
+			if(game_check ==NULL){
+				strcpy( response,"MOVE:ERROR:NO SUCH GAME");
+				write(client_sock , response , 2000);  
+				close(client_sock);
+		  		continue;
+			}
+			if(game_check->challenger==NULL){
+
+				strcpy( response,"MOVE:NO challenger joined in, you cannot move");
+				write(client_sock , response , 2000);  
+		  		close(client_sock);
+		  		continue;
+			}
+
+			if(game_check->state==-2||game_check->state==2){
+				strcpy( response,"MOVE:game has ended");
+				write(client_sock , response , 2000);  
+		  		close(client_sock);
+		  		continue;
+			}
+			else if(game_check->state==-1){
+				//host's move
+				//the user is host 
+				if(strcmp((game_check->creator)->username,username)==0){
+					if(game_check->ttt[row][col]==' '){
+						game_check->ttt[row][col] = 'o';
+						game_check->state=1;
+						strcpy( response,"MOVE:Creator move successfully");
+					}
+					else{
+						//pass
+						strcpy( response,"MOVE:You cannot move to this position");
+						write(client_sock , response , 2000);  
+		  				close(client_sock);
+		  				continue;
+					}
+				}
+				else{
+
+					strcpy( response,"MOVE:YOU ARE NOT ALLOWED TO MOVE.IT'S CREATOR's TURN");
+					write(client_sock , response , 2000);  
+		  			close(client_sock);
+		  			continue;
+				}
+
+			}
+			else if(game_check->state==1){
+				//challenger's move
+				if(strcmp((game_check->challenger)->username,username)==0){
+					if(game_check->ttt[row][col]==' '){
+						game_check->ttt[row][col] = 'x';
+						game_check->state=-1;
+						strcpy( response,"MOVE:CHALLENGER MOVE SUCCESSFULLY \r\n");
+					}
+					else{
+						strcpy( response,"MOVE:YOU CANNOT MOVE TO THIS POSITION\r\n");
+						write(client_sock , response , 2000);  
+		  				close(client_sock);
+		  				continue;
+					}
+				}
+				else{
+					strcpy( response,"MOVE:YOU ARE NOT ALLOWED TO MOVE.IT'S CHALLENGER's TURN \r\n");
+					write(client_sock , response , 2000);  
+		  			close(client_sock);
+		  			continue;
+				}
+			}
+			//check if somebody is winning*******************************
+				int win = check_winning(game_check->ttt);
+			
+			// too mnuch content and 
+			if(win==-2){
+				game_check->state=-2;
+				strcat(response, "MOVE: Creator WINS.\r\n");
+			}
+			else if(win==2){
+				game_check->state=2;
+				strcat( response, "MOVE: Challenger WINS.\r\n");
+			}
+			else{
+				strcat( response, "MOVE: A Draw is made.\r\n");
+			}
+
+			sprintf( response, "%s MOVE: %s IS IN PROGRESS.\r\n",response,username);
+			sprintf( response, "%sa  %c | %c | %c \r\n",response,  game_check->ttt[0][0],  game_check->ttt[0][1],  game_check->ttt[0][2]);
+			sprintf( response, "%s  ---|---|---\r\n", response );
+			sprintf( response, "%sb  %c | %c | %c \r\n", response, game_check->ttt[1][0],  game_check->ttt[1][1],  game_check->ttt[1][2]);
+			sprintf( response, "%s  ---|---|---\r\n", response );
+			sprintf( response, "%sc  %c | %c | %c \r\n", response, game_check->ttt[2][0],  game_check->ttt[2][1],  game_check->ttt[2][2]);
+			sprintf( response, "%s\r\n", response );
+			sprintf( response, "%s   %c   %c   %c\r\n", response, '1', '2', '3' );
+		}
+
+
+		else if( strcmp( command, "LIST" ) == 0 ){ 
+
+			struct USER * user_check = NULL;
+			find_user(&user_check,username,password);
+
+			if(user_check==NULL){
+
+				strcpy( response,"LIST:ERROR:No such user exist or password error");
+				write(client_sock , response , 2000);  
+		  		close(client_sock);
+		  		continue;
+			}
+
+
+			if(game_list_head==NULL){
+				strcpy( response, "LIST: no list on server to show" );
+				write(client_sock , response , 2000);  
+		  		close(client_sock);
+		  		continue;
+			}
+
+			else{
+
+				struct GAME *game_check = game_list_head;
+				strcpy( response,"LIST : game list ");
+
+				if(game_check->next==NULL){
+					char* game_name_list = game_check->gamename;
+					char* creator_name = (game_check->creator)->username;
+					char* challenger_name = (game_check->challenger)->username;
+					int win = game_check -> state;
+					
+
+					sprintf( response, "%s LIST: %s IS BETWEEN CREATIR %s AND CHALLENGER %s, STATE = %d.\r\n",
+						response, game_name_list,creator_name,challenger_name,win);
+				
+				}
+
+				else{
+
+						/*char* game_name_list = game_check->gamename;
+						char* creator_name = (game_check->creator)->username;
+						char* challenger_name = (game_check->challenger)->username;
+						
+						int win = game_check -> state;*/
+
+					while(game_check->next!=NULL){
+						
+						sprintf( response, "%s LIST: %s IS BETWEEN %s AND %s, STATE = %d.\r\n",response, (game_check->gamename),
+					((game_check->creator)->username),((game_check->challenger)->username),(game_check->state));
+
+
+						/*strcat( response, "GAME:");
+						strcat( response, game_name_list);
+						strcat( response, " CREATOR:");
+						strcat( response, creator_name);
+						strcat( response, " CHALLENGER:");
+						strcat( response, challenger_name);
+						strcat( response, " STATE:");
+						if(win==-2){
+						char* state  = "-2, CHALLENGER_WON";
+						strcat( response, state);
+						}
+
+						else if(win==2){
+							char* state  = "-2, CREATOR_WON";
+							strcat( response, state);
+							}
+							else if(win==1){
+							char* state  = "1, CHALLENGER_TURN";
+							strcat( response, state);
+							}
+						else if(win==-1)
+						{
+							char* state  = "-1, CREATOR_TURN";
+							strcat( response, state);
+							
+						}
+
+							strcat( response, "\n");
+
+						 game_name_list = game_check->gamename;
+						 creator_name = (game_check->creator)->username;
+						 challenger_name = (game_check->challenger)->username;
+						
+						 win = game_check -> state;*/
+
+						game_check = game_check->next;
+				}
+
+				sprintf( response, " %s LIST: %s IS BETWEEN %s AND %s, STATE = %d.\r\n",response, (game_check->gamename),
+					((game_check->creator)->username),((game_check->challenger)->username),(game_check->state));
+
+
+						/*strcat( response, "GAME:");
+						strcat( response, game_name_list);
+						strcat( response, " CREATOR:");
+						strcat( response, creator_name);
+						strcat( response, " CHALLENGER:");
+						strcat( response, challenger_name);
+						strcat( response, " STATE:");
+						if(win==-2){
+						char* state  = "-2, CHALLENGER_WON";
+						strcat( response, state);
+						}
+
+						else if(win==2){
+							char* state  = "-2, CREATOR_WON";
+							strcat( response, state);
+							}
+							else if(win==1){
+							char* state  = "1, CHALLENGER_TURN";
+							strcat( response, state);
+							}
+						else if(win==-1)
+						{
+							char* state  = "-1, CREATOR_TURN";
+							strcat( response, state);
+							
+						}*/
+
+			}
+		}
+	}
+
+		else if( strcmp( command, "SHOW" ) == 0 ){
+
+			char *game_name = strtok( NULL, ",");
+			
+
+				if( game_name == NULL ){
+					//past
+				strcpy( response, "MOVE COMMAND MUST BE CALLED AS FOLLOWS:\n" );
+				strcpy( response, "MOVE,USER,PASS,GAMENAME,SQUARE\n");
+				write(client_sock , response , 2000);  
+		  		close(client_sock);
+		  		continue;
+			}
+					struct USER * user_check = NULL;
+
+				find_user(&user_check,username,password);
+
+			if(user_check==NULL){
+
+				strcpy( response,"SHOW ERROR:No such user exist or password error");
+				write(client_sock , response , 2000);  
+		  		close(client_sock);
+		  		continue;
+			}
+
+			struct GAME * game_check = NULL;
+
+			find_game(&game_check,game_name);
+
+			if(game_check ==NULL){
+
+				strcpy( response,"SHOW:ERROR:NO SUCH GAME");
+				write(client_sock , response , 2000);  
+		  		close(client_sock);
+		  		continue;
+			}
+
+			sprintf( response, "SHOW: %s IS BETWEEN %s AND %s, STATE = %d.\r\n",(game_check->gamename),
+					((game_check->creator)->username),((game_check->challenger)->username),(game_check->state));
+			//
+			sprintf( response, "%sa  %c | %c | %c \r\n",response,  game_check->ttt[0][0],  game_check->ttt[0][1],  game_check->ttt[0][2]);
+			sprintf( response, "%s  ---|---|---\r\n", response );
+			sprintf( response, "%sb  %c | %c | %c \r\n", response, game_check->ttt[1][0],  game_check->ttt[1][1],  game_check->ttt[1][2]);
+			sprintf( response, "%s  ---|---|---\r\n", response );
+			sprintf( response, "%sc  %c | %c | %c \r\n", response, game_check->ttt[2][0],  game_check->ttt[2][1],  game_check->ttt[2][2]);
+			sprintf( response, "%s\r\n", response );
+			sprintf( response, "%s   %c   %c   %c\r\n", response, '1', '2', '3' );
+
+		}
+
+		else{
+	  		sprintf( response, "COMMAND %s NOT IMPLEMENTED", command );
+		}
+
+		write(client_sock , response , 2000);  
+		close(client_sock);
+	}
+
+	close(socket_desc);	
+	
+	return 0;
+}
+
+
