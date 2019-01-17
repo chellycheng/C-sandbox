@@ -1,0 +1,10 @@
+#all imput files have .jpg extension
+
+#for d in $(find $1/* -maxdepth 1 -type f -print0 -name \*.jpg | xargs -0 stat -c "%y|%n" | sort | awk -F'|' '{print $2}')
+
+for d in $(find $1/* -maxdepth 1 -type f -print0 -name \*.jpg | xargs -0 stat -f "%a|%N" | sort | awk -F'|' '{print $2}')
+do
+	convert -append *.jpg q3_$1.jpg
+	#sort the file according to time line
+done
+
