@@ -1,0 +1,59 @@
+	~Writing a file~
+$vim q1_wriiten_answers.txt
+
+Question 1： List all the weights, in increasing order (ignore names here).
+Answer1:
+	104kg
+	364kg
+	450kg
+	1000kg
+	1800kg
+	4900kg
+	29000kg
+	110000kg
+Find this by doing following procedure:
+$ cat *.dat > data.txt  which process all the datas about weights and heights
+$ cut -f1 -d" " data.txt > weight.txt which write all weights data into a new file
+$ sort -n < weight.txt    which sort the data about weights in increading order
+
+Question 2: List all the lengths, in decreasing order (ignore names here).
+Answer2:
+	24m
+	13.5m
+	6m
+	5.15m
+	4.5m
+	4m
+	2.1m
+	2.0m
+Find this by doing following procedure:
+$ cut -f2 -d" " data.txt > height.txt which write all heights data into a new file
+$ sort -nr < height.txt    which sort the data about heights in decreading order
+
+Question 3: Which is heavier, the hippo or the elephant? 
+Answer3:The elephant is heavier. 
+$hippo=$(cut -f1 -d"k" hippopotamus.dat) which capture the weight of hippopotamus and store into a new variable called hippo
+$ele=$(cut -f1 -d"k" elephant.dat) which capture the weight of elephant and store into a new variable called ele
+$vim if.bash which creates a bash file including
+#!/bin/bash
+
+if [ $1 -gt $2 ]; then
+	echo The first one is larger.
+else 
+	echo The second one is larger.
+fi
+
+$bash if.bash $hippo $ele 
+The second one is larger. which shows the weight of elephant is heavier.
+
+Question d:An unfortunate fish swam into the crocodile pen, please increase its weight by 2 kg.
+$croc=$(cut -f1 -d"k" crocodile.dat) which set the weights as variable
+$newcroc=$((10#${croc}+2)) which turn character into number base on 10 and add 2
+$sed -n "s/$croc/$newcroc/p" crocodile.dat  which turns the old data into new datas and print on the screen
+
+Question e:The giraffe is annoyingly tall, please remove all traces of it from our zoo.
+Answer:
+$rm -i giraffe.dat
+$rm -i giraffe.jpg
+$echo NO MORE GIRAFFE!
+
