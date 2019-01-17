@@ -1,0 +1,295 @@
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "A3_provided_functions.h"
+
+unsigned char*
+bmp_open( char* bmp_filename,        unsigned int *width, 
+          unsigned int *height,      unsigned int *bits_per_pixel, 
+          unsigned int *padding,     unsigned int *data_size, 
+          unsigned int *data_offset                                  )
+{
+  unsigned char *img_data=NULL;
+  // REPLACE EVERYTHING FROM HERE
+ 	FILE *bmpfile = fopen(bmp_filename,"rb");
+
+ 	if(bmpfile == NULL){
+ 		printf("The file cannot be open by fopen.\n");
+ 		return NULL;
+ 	}
+
+ char b, m;
+  //those are grabage
+  fread (&b,1,1,bmpfile);
+  fread (&m,1,1,bmpfile);
+
+  // Read the overall file size 
+  unsigned int overallFileSize;
+  //4 bytes
+  fread( &overallFileSize, 1, sizeof(unsigned int), bmpfile );
+
+ 	rewind(bmpfile);
+
+ 	img_data=(char *)malloc(overallFileSize+1);
+
+  //TODO:check malloc fail return value
+	if(!img_data){
+ 		return NULL;
+ 	}
+
+ 	if(fread(img_data,1 , overallFileSize,bmpfile) != overallFileSize){
+ 		printf("Fall to read the %d\n", overallFileSize);
+ 		return NULL;
+ 	}	
+
+ 	//width
+ 	unsigned int *wp = (unsigned int *)(img_data+18);
+ 	*width=*wp; 
+ 	//height
+ 	unsigned int *ht = (unsigned int *)(img_data+22);
+ 	*height=*ht;
+ 	//Bits per Pixel
+ 	unsigned short *bpp = (unsigned short*)(img_data+28);
+ 	*bits_per_pixel = *bpp;
+ 	//data size
+ 	unsigned int *ds = (unsigned int*)(img_data+2);
+ 	*data_size=*ds;
+ 	//file offset to pixel array
+ 	unsigned int *ofs=(unsigned int*) (img_data+10);
+ 	*data_offset = *ofs;
+ 	//padding
+ 	//we need the length of row
+ 	unsigned int length= (*wp)*(*bpp);
+ 	unsigned int pd_p = (4-(length/8)%4);
+
+  if(pd_p==4){
+    pd_p=0;
+  }
+ 	unsigned int *pd =(unsigned int*)(&pd_p); 
+ 	*padding=*pd;
+
+  // TO HERE!  
+  return img_data;  
+}
+
+void 
+bmp_close( unsigned char **img_data )
+{
+  // REPLACE EVERYTHING FROM HERE
+  if( *img_data != NULL ){
+    free( *img_data );
+    *img_data = NULL;
+  }
+  //TO HERE!
+}
+
+unsigned char***  
+bmp_scale( unsigned char*** pixel_array, unsigned char* header_data, unsigned int header_size,
+           unsigned int* width, unsigned int* height, unsigned int num_colors,
+           float scale )
+{
+
+  unsigned char*** new_pixel_array = NULL; 
+  // REPLACE EVERYTHING FROM HERE
+
+  if(scale==1){
+    new_pixel_array=pixel_array;
+    return new_pixel_array;
+  }
+
+  unsigned int ht,wd,cl;
+
+  ht = *height;
+  wd = *width;
+  cl = num_colors;
+
+ unsigned int height_new = (int)(ht*scale);
+ unsigned int width_new =(int)(wd*scale);
+
+
+  //malloc program
+    int i,j,k;
+    //1
+    new_pixel_array = (unsigned char***)malloc(sizeof(unsigned char**)*height_new);
+
+    //free1
+    if(!new_pixel_array){
+      printf("Eror on malloc!(139)\n");
+      return NULL;
+    }
+
+    //2
+    for (i=0;i<height_new;i++){
+      new_pixel_array[i]=(unsigned char**)malloc(width_new*sizeof(unsigned char*));
+      if(!new_pixel_array[i]){
+        printf("Eror on malloc!(147)\n");
+        break;
+      }
+  }
+    //free2
+    if(i<height_new){
+      while(i--){
+        free(new_pixel_array[i]);
+      }
+      free(new_pixel_array);
+      return NULL;
+    }
+
+    //3
+    for(i=0;i<height_new;i++){
+        for(j=0;j<width_new;j++){
+          new_pixel_array[i][j]=(unsigned char*)malloc(cl*sizeof(unsigned char));
+        if(!new_pixel_array[i][j]){
+          printf("Error on malloc!(165)\n");
+          break;
+        }
+      }
+    }
+
+    //free3
+    if(j<width_new){
+      do
+      {
+        while(j--){
+          free(new_pixel_array[i][j]);
+        }
+        free(new_pixel_array[i]);
+        j=width_new;
+      }while(i--);
+
+      free(new_pixel_array);
+
+      return NULL;
+    }
+
+
+  //modify on the pixel_array
+
+    for(int x=0;x<height_new;x++){
+      for(int y=0;y<width_new;y++){
+        for(int z=0;z<cl;z++){
+            (new_pixel_array[x][y][z])= (pixel_array[(int)(x/scale)][(int)(y/scale)][z]);
+        }
+      }
+    }
+
+
+  //modify on the height
+
+  *height = height_new;
+  //modify on the width
+  *width= width_new;
+
+  //modify on the header
+    //modify on the size
+    //TODO:new padding
+    unsigned int length = (width_new*cl);
+    unsigned int padding = 4-length%4;
+
+    if(padding==4){
+      padding=0;
+    }
+    unsigned int size_new =(height_new)*(width_new*cl+padding);
+    unsigned int* data_size =(unsigned int*)(header_data+2);
+    *data_size = (size_new + header_size);
+    //modify on the width
+    unsigned int* data_width = (unsigned int*)(header_data+18);
+    *data_width= width_new;
+    //modify on the height
+    unsigned int* size_height =(unsigned int*)(header_data+22);
+    *size_height= height_new;
+
+  // TO HERE! 
+  return new_pixel_array;
+}         
+
+int 
+bmp_collage( char* background_image_filename,     char* foreground_image_filename, 
+             char* output_collage_image_filename, int row_offset,                  
+             int col_offset,                      float scale )
+{
+  // REPLACE EVERYTHING FROM HERE
+  
+  //0. a lots of pointer
+  unsigned char* bg_header_data;
+  unsigned char* fg_header_data;
+  unsigned int  bg_header_size,  bg_width, bg_height;
+  unsigned int  fg_header_size,  fg_width, fg_height;
+  unsigned int  bg_num_color,fg_num_color;
+
+ 
+  //1. open file and conver them into a 3D array
+  unsigned char*** bg_3D=(unsigned char ***)bmp_to_3D_array(background_image_filename,     &bg_header_data,
+                                                            &bg_header_size,               &bg_width, 
+                                                            &bg_height,                    &bg_num_color);
+  if(bg_3D==NULL){
+  	printf("Error: Fail to open background image! \n");
+  	return -1;
+  }
+
+  unsigned char*** fg_3D=(unsigned char ***)bmp_to_3D_array(foreground_image_filename,     &fg_header_data,
+                                                              &fg_header_size,              &fg_width,
+                                                              &fg_height,                   &fg_num_color);
+  if(fg_3D==NULL){
+  	printf("Error: Fail to open frontground image! \n");
+  	return -1;
+  }
+    //1.1 for the foreground_image call the scale
+
+  unsigned char*** fg_scale_3D = bmp_scale(fg_3D,       fg_header_data,      fg_header_size,
+                                 &fg_width,       &fg_height,               fg_num_color,     scale);
+    
+    if(fg_scale_3D==NULL){
+    	printf("Error: Fail to scale the frontground image!\n");
+    	return -1;
+    }
+
+    //1.2 some return null function
+    if((bg_num_color!=4)||(fg_num_color!=4)){
+      printf("Bpp error!\n");
+      return -1;
+    }
+
+    // unsigned int fg_scale_width,fg_scale_height,bg_height_int,bg_width_int;
+    // fg_scale_width = fg_width;
+    // fg_scale_height = fg_height;
+    // bg_height_int = bg_height;
+    // bg_width_int =bg_width;
+
+    if(fg_width>bg_width||fg_height>bg_height){
+      printf("Height, width error.\n");
+      return -1;
+    }
+
+    if(((row_offset+fg_height)>bg_height)||((col_offset+fg_width)>bg_width)){
+    	printf("Offset too large!\n");
+    	return -1;
+    }
+
+
+  //3. visit every pixel in background if alpha ==0 , do nothing
+      for(int i=0;i<fg_height;i++){
+        for(int j=0;j<fg_width;j++){
+         //4. if alpha !=0 , copy the foreground image pixel over the background image
+             //printf("The first letter of row %d, and colomn %d, is %d. \n",i,j,fg_scale_3D[i][j][0]);
+               if(fg_scale_3D[i][j][0]!=0){
+                 for(int k=0;k<fg_num_color;k++){
+                    bg_3D[i+row_offset][j+col_offset][k]=fg_scale_3D[i][j][k];
+               }
+          }
+        }
+      }
+
+    //5.check output is the same size as the background image
+
+
+      bmp_from_3D_array(output_collage_image_filename,bg_header_data,
+                        bg_header_size,bg_3D,bg_width,bg_height,bg_num_color);
+
+  
+  // TO HERE!  
+  return 0;
+}              
+
+
